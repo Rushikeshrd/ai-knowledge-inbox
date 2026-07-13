@@ -1,23 +1,16 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
-import type { IngestPayload, SourceType } from "../types/api";
 
-interface IngestFormProps {
-  isSubmitting: boolean;
-  onSubmit: (payload: IngestPayload) => Promise<boolean>;
-}
-
-export function IngestForm({ isSubmitting, onSubmit }: IngestFormProps) {
-  const [sourceType, setSourceType] = useState<SourceType>("note");
+export function IngestForm({ isSubmitting, onSubmit }) {
+  const [sourceType, setSourceType] = useState("note");
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState(null);
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setFeedback(null);
 
-    const payload: IngestPayload =
+    const payload =
       sourceType === "note" ? { source_type: "note", text } : { source_type: "url", url };
 
     const ok = await onSubmit(payload);
@@ -33,7 +26,7 @@ export function IngestForm({ isSubmitting, onSubmit }: IngestFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
       <div className="flex gap-2">
-        {(["note", "url"] as SourceType[]).map((type) => (
+        {["note", "url"].map((type) => (
           <button
             key={type}
             type="button"

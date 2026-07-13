@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, fetchItems, ingestItem } from "../api/client";
-import type { IngestPayload, ItemSummary } from "../types/api";
 
 export function useItems() {
-  const [items, setItems] = useState<ItemSummary[]>([]);
+  const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -26,7 +25,7 @@ export function useItems() {
   }, [refresh]);
 
   const submit = useCallback(
-    async (payload: IngestPayload) => {
+    async (payload) => {
       setIsSubmitting(true);
       setError(null);
       try {

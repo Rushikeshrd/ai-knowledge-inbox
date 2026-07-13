@@ -1,114 +1,73 @@
 # AI Knowledge Inbox
 
-Save notes and URLs, then ask questions over them via a small RAG pipeline.
-Single-user, no auth, local-first.
+A small personal tool for saving notes and URLs, then asking questions about them. It's built as a simple RAG (retrieval-augmented generation) pipeline, meant for a single user running it locally, with no login required.
 
-## Architecture
+## How it's put together
 
-```
-frontend/ (React + Vite + Tailwind, TypeScript)
-  └── calls → backend/ (FastAPI)
-                ├── ingestion.py   fetch + clean URL content, validate notes
-                ├── chunking.py    split raw content into overlapping windows
-                ├── embeddings.py  local sentence-transformers model
-                ├── vector_store.py SQLite storage + in-process cosine search
-                ├── llm.py         Groq chat completion for answer generation
-                ├── rag.py         orchestrates retrieval → generation
-                └── routers/       POST /ingest, GET /items, POST /query
-                                   (SQLite file: backend/data/inbox.db)
-```
+The frontend is a React + Vite app, written in plain JavaScript and styled with Tailwind. It talks to a FastAPI backend that handles everything else: fetching and cleaning URL content, validating notes, splitting text into chunks, generating embeddings with a local sentence-transformers model, storing everything in SQLite, and calling Groq to generate answers. The backend exposes three main routes: `POST /ingest`, `GET /items`, and `POST /query`.
 
-Each concern lives in its own module: routers stay thin (parse → call
-service → shape response), services own one job each, and nothing reaches
-into SQLite directly except `db.py` / `vector_store.py` / `items_repository.py`.
+Each part of the backend has one job. Routers parse requests, hand off to services, and shape responses. Services do the actual work. The only places that write raw SQL are `db.py`, `vector_store.py`, and `items_repository.py`; routers just open a connection and pass it along when a request needs one transaction across two of those services.
 
-## Setup
+## Running it locally
 
 ### Backend
+
+Open a terminal in the `backend` folder and set up a virtual environment:
 
 ```bash
 cd backend
 python -m venv venv
-./venv/Scripts/activate        # Windows; use `source venv/bin/activate` on macOS/Linux
+./venv/Scripts/activate        # on macOS/Linux use: source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env           # then set GROQ_API_KEY (free key: https://console.groq.com/keys)
+cp .env.example .env           # then add your GROQ_API_KEY (get a free one at https://console.groq.com/keys)
 uvicorn app.main:app --reload --port 8000
 ```
 
-The embedding model (`all-MiniLM-L6-v2`, ~80MB) downloads automatically on
-first use and is cached locally afterward.
+The first time you run it, it'll download the embedding model (`all-MiniLM-L6-v2`, about 80MB). After that it's cached locally, so startup is fast.
 
 ### Frontend
+
+In a separate terminal:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env           # VITE_API_BASE_URL, defaults to http://localhost:8000
-npm run dev                    # http://localhost:5173
+cp .env.example .env           # sets VITE_API_BASE_URL, defaults to http://localhost:8000
+npm run dev                    # opens at http://localhost:5173
 ```
 
-## API
+## The API
 
-All error responses share one shape: `{"error": {"code": "...", "message": "..."}}`.
+Every error comes back in the same shape: `{"error": {"code": "...", "message": "..."}}`. Requests that don't match the expected schema (wrong types, missing fields) get a 422 from Pydantic; requests that are well-formed but fail a business rule (like a missing `url` for `source_type: "url"`) get a 400 from the app itself.
 
-| Endpoint | Method | Body | Notes |
-|---|---|---|---|
-| `/ingest` | POST | `{"source_type": "note", "text": "..."}` or `{"source_type": "url", "url": "..."}` | 201 on success, 400 on bad input, 502 if a URL can't be fetched |
-| `/items` | GET | — | Returns saved items with preview + chunk count, newest first |
-| `/query` | POST | `{"question": "...", "top_k": 4}` | `top_k` optional (defaults to 4); 502 if the LLM call fails |
-| `/health` | GET | — | Liveness check |
+`POST /ingest` accepts either `{"source_type": "note", "text": "..."}` or `{"source_type": "url", "url": "..."}`. It returns 201 on success, 400 if the input fails validation, and 502 if a URL can't be fetched.
 
-Full request/response schemas are enforced by Pydantic — see `backend/app/models.py`.
+`GET /items` returns everything you've saved so far, newest first, along with a preview and chunk count for each.
 
-## Design tradeoffs
+`POST /query` takes `{"question": "...", "top_k": 4}` (top_k is optional). It returns 400 for an empty question and 502 if the LLM call fails.
 
-**Chunking** — fixed ~800-character windows with ~120-character overlap,
-preferring to break on sentence/paragraph boundaries over hard character
-cuts (`backend/app/services/chunking.py`). No tokenizer dependency, cheap to
-reason about, and overlap avoids losing context that straddles a boundary.
-A semantic/structure-aware chunker (split by heading, adaptive size) would
-retrieve better on long structured documents, but isn't worth the complexity
-for short notes and articles at single-user scale.
+`GET /health` is just a liveness check.
 
-**Embeddings** — local `sentence-transformers` model instead of a hosted
-embeddings API. Groq (the LLM provider used here) doesn't expose embeddings,
-and adding a second paid provider just for that would be more moving parts
-for no real benefit at this scale. Tradeoff: first-request latency to load
-the model, and CPU-bound encoding — both fine for single-user volume, not
-fine for high concurrent throughput.
+The full request and response schemas are enforced by Pydantic, so `backend/app/models.py` is the source of truth if you want the details.
 
-**Vector store** — SQLite for persistence, cosine similarity computed
-in-process with numpy at query time (`vector_store.py`). No extra
-infrastructure, trivially inspectable, persists across restarts. This is a
-linear scan: it stays fast (low milliseconds) up to a few thousand chunks,
-which comfortably covers a personal inbox.
+## Why it's built this way
 
-**What breaks at scale** —
-- Linear scan becomes the bottleneck once chunk count reaches the tens of
-  thousands; query latency grows linearly with corpus size.
-- SQLite has no built-in concurrent-write scaling story — fine for one user,
-  not for many simultaneous ingesters.
-- Everything, including the embedding model, runs in the same process as
-  the API — a slow embed or LLM call blocks that worker.
-- No pagination on `/items` — a large inbox returns everything in one
-  response.
+**Chunking.** Text gets split into roughly 800-character windows with about 120 characters of overlap, and it tries to break on sentence or paragraph boundaries rather than cutting mid-word. This avoids needing a tokenizer and is easy to reason about. A fancier structure-aware chunker would probably retrieve better on long, heavily formatted documents, but that's overkill for short notes and articles at single-user scale.
 
-**Production changes** —
-- Swap the linear scan for an ANN index (pgvector, Qdrant, or a managed
-  vector DB) once corpus size or query volume justifies it.
-- Move embedding generation and URL fetching to a background job queue so
-  `/ingest` returns immediately and heavy work happens asynchronously.
-- Add auth + per-user partitioning if this stops being single-user.
-- Add pagination/cursoring to `/items` and rate limiting to `/query`.
-- Replace the in-process SQLite file with a networked database once more
-  than one API instance needs to share state.
+**Embeddings.** These run locally via sentence-transformers instead of a hosted API. Groq, which handles the LLM side, doesn't offer embeddings, and bringing in a second paid provider just for that didn't seem worth it. The tradeoff is a bit of latency on the first request while the model loads, and encoding happens on CPU, but that's totally fine at the volume one person generates.
 
-## Debuggability
+**Vector store.** Chunks and their embeddings live in SQLite, and similarity search is just cosine similarity computed in-process with numpy. No extra infrastructure to run, everything is easy to inspect, and it survives restarts. It's a linear scan under the hood, which stays fast up to a few thousand chunks. That comfortably covers a personal inbox.
 
-- Structured JSON logs (`backend/app/logging_config.py`) with a per-request
-  ID threaded through every log line and returned as `X-Request-Id`.
-- Every expected failure mode (bad input, unreachable URL, embedding
-  failure, LLM failure) is a typed `AppError` subclass mapped to a specific
-  HTTP status and error code — see `backend/app/exceptions.py`.
-- Unexpected exceptions are caught by a global handler and logged with
-  detail server-side while returning a generic message to the client.
+## Where this would start to creak
+
+This is built for one person, not scale, so a few things would need to change before it could handle more:
+
+The linear scan over embeddings would become the bottleneck somewhere in the tens of thousands of chunks, since query time grows with corpus size. SQLite also doesn't have a real story for concurrent writes, which is fine for one user but not for many. And everything, including the embedding model, runs inside the same process as the API, so a slow embed or LLM call blocks whatever else is happening. There's also no pagination on `/items` yet, so a big inbox just returns everything at once.
+
+If this were headed toward production, the natural next steps would be swapping the linear scan for a proper ANN index like pgvector or Qdrant, moving embedding and URL fetching into a background job queue so `/ingest` can return immediately, adding auth and per-user data if it stops being single-user, adding pagination and rate limiting, and eventually moving off a local SQLite file to a networked database.
+
+## Debugging
+
+Logs are structured JSON (see `backend/app/logging_config.py`), and every request gets an ID that's threaded through its log lines and returned in the `X-Request-Id` header, so a single request's story is easy to follow.
+
+Every expected failure, bad input, an unreachable URL, an embedding failure, an LLM failure, is its own typed `AppError` subclass mapped to a specific status code and error code (see `backend/app/exceptions.py`). Anything unexpected gets caught by a global handler, logged with full detail on the server, and turned into a generic message for the client.

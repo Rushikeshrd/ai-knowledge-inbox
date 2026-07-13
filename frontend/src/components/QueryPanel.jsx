@@ -1,18 +1,9 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
-import type { QueryResponse } from "../types/api";
 
-interface QueryPanelProps {
-  isLoading: boolean;
-  error: string | null;
-  result: QueryResponse | null;
-  onAsk: (question: string) => void;
-}
-
-export function QueryPanel({ isLoading, error, result, onAsk }: QueryPanelProps) {
+export function QueryPanel({ isLoading, error, result, onAsk }) {
   const [question, setQuestion] = useState("");
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = (event) => {
     event.preventDefault();
     onAsk(question);
   };

@@ -1,11 +1,4 @@
-import type { ItemSummary } from "../types/api";
-
-interface ItemListProps {
-  items: ItemSummary[];
-  isLoading: boolean;
-}
-
-function formatTimestamp(iso: string): string {
+function formatTimestamp(iso) {
   try {
     return new Date(iso).toLocaleString();
   } catch {
@@ -13,7 +6,7 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-export function ItemList({ items, isLoading }: ItemListProps) {
+export function ItemList({ items, isLoading }) {
   if (isLoading) {
     return <p className="text-sm text-neutral-500">Loading saved items...</p>;
   }

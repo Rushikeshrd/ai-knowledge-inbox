@@ -1,13 +1,12 @@
 import { useCallback, useState } from "react";
 import { ApiError, askQuestion } from "../api/client";
-import type { QueryResponse } from "../types/api";
 
 export function useAskQuestion() {
-  const [result, setResult] = useState<QueryResponse | null>(null);
+  const [result, setResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
 
-  const ask = useCallback(async (question: string) => {
+  const ask = useCallback(async (question) => {
     if (!question.trim()) {
       setError("Enter a question first.");
       return;

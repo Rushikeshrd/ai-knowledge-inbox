@@ -1,12 +1,7 @@
-import type { ApiErrorBody, IngestPayload, IngestResponse, ItemListResponse, QueryResponse } from "../types/api";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
-  code: string;
-  status: number;
-
-  constructor(status: number, code: string, message: string) {
+  constructor(status, code, message) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -14,8 +9,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  let response: Response;
+async function request(path, options) {
+  let response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       headers: { "Content-Type": "application/json" },
@@ -26,7 +21,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    let body: ApiErrorBody | null = null;
+    let body = null;
     try {
       body = await response.json();
     } catch {
@@ -39,22 +34,22 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     );
   }
 
-  return response.json() as Promise<T>;
+  return response.json();
 }
 
-export function fetchItems(): Promise<ItemListResponse> {
-  return request<ItemListResponse>("/items");
+export function fetchItems() {
+  return request("/items");
 }
 
-export function ingestItem(payload: IngestPayload): Promise<IngestResponse> {
-  return request<IngestResponse>("/ingest", {
+export function ingestItem(payload) {
+  return request("/ingest", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-export function askQuestion(question: string, topK?: number): Promise<QueryResponse> {
-  return request<QueryResponse>("/query", {
+export function askQuestion(question, topK) {
+  return request("/query", {
     method: "POST",
     body: JSON.stringify({ question, top_k: topK ?? 0 }),
   });
